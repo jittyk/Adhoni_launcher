@@ -5,7 +5,6 @@ import android.graphics.drawable.Drawable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.jitz.adhoni_launcher.domain.model.DomainAppItem
 import com.jitz.adhoni_launcher.domain.usecase.GetAllowedAppsUseCase
 import com.jitz.adhoni_launcher.domain.usecase.ToggleAppPermissionUseCase
 import kotlinx.coroutines.flow.SharingStarted
