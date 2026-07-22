@@ -6,12 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.*
-import com.jitz.adhoni_launcher.BuildConfig
-import com.jitz.adhoni_launcher.data.ParentRepository
-import com.jitz.adhoni_launcher.data.Story
-import com.jitz.adhoni_launcher.data.StoryGeneratorService
-import com.jitz.adhoni_launcher.security.BiometricAuthManager
-import com.jitz.adhoni_launcher.data.StoryRepository
+import com.jitz.adhoni_launcher.di.Dependencies
+import com.jitz.adhoni_launcher.domain.model.DomainStory
 import com.jitz.adhoni_launcher.ui.components.ParentAuthDialog
 import com.jitz.adhoni_launcher.ui.screens.ChildHomeScreen
 import com.jitz.adhoni_launcher.ui.screens.ParentDashboardScreen
@@ -27,42 +23,36 @@ enum class Screen {
 
 class MainActivity : FragmentActivity() {
 
-    private lateinit var parentRepository: ParentRepository
-    private lateinit var biometricAuthManager: BiometricAuthManager
-    private val storyRepository = StoryRepository()
-
-    // Replace with your NEW API key
-    private val storyService = StoryGeneratorService(apiKey = BuildConfig.STORY_API_KEY)
-    // Lazy viewmodel initialization ensures parentRepository exists first
     private val safeAppsViewModel: SafeAppsViewModel by viewModels {
-        SafeAppsViewModelFactory(applicationContext, parentRepository)
+        SafeAppsViewModelFactory(
+            Dependencies.getGetAllowedAppsUseCase(),
+            Dependencies.getToggleAppPermissionUseCase(),
+            applicationContext
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialize late-init dependencies FIRST
-        parentRepository = ParentRepository(applicationContext)
-        biometricAuthManager = BiometricAuthManager(this)
+        // Initialize all dependencies ONCE
+        Dependencies.init(applicationContext, this, BuildConfig.STORY_API_KEY)
 
         setContent {
             var currentScreen by remember { mutableStateOf(Screen.CHILD_HOME) }
-            var selectedStory by remember { mutableStateOf<Story?>(null) }
+            var selectedStory by remember { mutableStateOf<DomainStory?>(null) }
             var showParentGate by remember { mutableStateOf(false) }
 
             val appList by safeAppsViewModel.appList.collectAsState()
+            val parentRepository = Dependencies.getParentRepository()
             val savedPin by parentRepository.parentPin.collectAsState(initial = null)
-
-            // Filter apps: Only show approved apps on the child home screen
-            val allowedApps = appList.filter { it.isAllowed }
-            val sampleStories = remember { storyRepository.getSampleStories() }
+            
+            val storiesUseCase = Dependencies.getGetStoriesUseCase()
+            val sampleStories = remember { storiesUseCase() }
 
             when (currentScreen) {
                 Screen.CHILD_HOME -> {
                     ChildHomeScreen(
-                        allowedApps = allowedApps,
-                        stories = sampleStories,
-                        storyService = storyService,
+                        allowedApps = appList,
                         onAppClick = { packageName ->
                             val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
                             if (launchIntent != null) {
@@ -71,13 +61,7 @@ class MainActivity : FragmentActivity() {
                                 Toast.makeText(this@MainActivity, "App cannot be opened", Toast.LENGTH_SHORT).show()
                             }
                         },
-                        onStoryClick = { story ->
-                            selectedStory = story
-                            currentScreen = Screen.STORY_PLAYER
-                        },
-                        onParentGateClick = {
-                            showParentGate = true
-                        }
+                        onParentGateClick = { showParentGate = true }
                     )
                 }
 
@@ -98,18 +82,18 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            // Security Gate Modal Dialog
             if (showParentGate) {
                 ParentAuthDialog(
-                    correctPin = savedPin ?: "1234", // Default PIN for initial setup
+                    correctPin = savedPin ?: "1234",
                     onDismiss = { showParentGate = false },
                     onSuccess = {
                         showParentGate = false
                         currentScreen = Screen.PARENT_DASHBOARD
                     },
                     onUseBiometrics = {
-                        if (biometricAuthManager.canAuthenticate()) {
-                            biometricAuthManager.authenticate(
+                        val authManager = Dependencies.getBiometricAuthManager()
+                        if (authManager.canAuthenticate()) {
+                            authManager.authenticate(
                                 onSuccess = {
                                     showParentGate = false
                                     currentScreen = Screen.PARENT_DASHBOARD
@@ -129,7 +113,5 @@ class MainActivity : FragmentActivity() {
                 )
             }
         }
-
     }
-
 }
